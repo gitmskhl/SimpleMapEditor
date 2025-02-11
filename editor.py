@@ -283,6 +283,10 @@ if __name__ == "__main__":
                     editor.move[1] = -5
                 if event.key == pygame.K_g:
                     editor.grid = not editor.grid
+                elif (event.key == pygame.K_SPACE and ctrl_pressed) or event.key == pygame.K_b:
+                    editor.current_variant -= 1
+                    if editor.current_variant < 0:
+                        editor.current_variant = len(editor.resources[editor.current_resource]) - 1
                 elif event.key == pygame.K_SPACE:
                     editor.current_variant = (editor.current_variant + 1) % len(editor.resources[editor.current_resource])
                 elif event.key == pygame.K_e:
