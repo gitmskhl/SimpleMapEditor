@@ -6,7 +6,7 @@ from scripts import utils
 
 if __name__ == "__main__":
     pygame.init()
-    HISTORY_MAX=100
+    HISTORY_MAX=10000
     GRAY = (50,) * 3
 
     SCREEN_WIDTH = 800
@@ -14,6 +14,19 @@ if __name__ == "__main__":
 
 # 16 x 16 is the base
 class Editor:
+    TRANSFORM_TILES = {'grass', 'stone'}
+    TRANSFORM_RULES = {
+        ((1, 0),): 0,
+        ((-1, 0), (1, 0)): 1,
+        ((-1, 0),): 2,
+        ((0, -1), (0, 1), (-1, 0)): 3,
+        ((0, -1), (-1, 0)): 4,
+        ((0, -1), (-1, 0), (1, 0)): 5,
+        ((0, -1), (1, 0)): 6,
+        ((0, -1), (1, 0), (0, 1)): 7
+    }
+    TRANSFORM_RULES = {tuple(sorted(k)): v for k, v in TRANSFORM_RULES.items()}
+
     def __init__(self):
         self.base_tile_size = 16
         self.tile_size = 16
@@ -37,6 +50,27 @@ class Editor:
         self.history = []
         self.history_index = 0
         self.load()
+
+    def transform(self):
+        for pos, tile in self.tile_map.items():
+            if tile['resource'] in Editor.TRANSFORM_TILES:
+                neighbours = []
+                for i in range(-1, 2):
+                    for j in range(-1, 2):
+                        if i == 0 and j == 0 or i != 0 and j != 0: continue
+                        if (pos[0] + i, pos[1] + j) in self.tile_map and self.tile_map[(pos[0] + i, pos[1] + j)]['resource'] == tile['resource']:
+                            neighbours.append((i, j))
+                situation = tuple(sorted(neighbours))
+                if situation in Editor.TRANSFORM_RULES:
+                    tile['variant'] = Editor.TRANSFORM_RULES[situation]
+                else:
+                    suits = []
+                    for req_situation in Editor.TRANSFORM_RULES:
+                        if all([x in situation for x in req_situation]):
+                            suits.append(req_situation)
+                    if suits:
+                        suit_situation = sorted(suits, key=lambda x: -len(x))[0]
+                        tile['variant'] = Editor.TRANSFORM_RULES[suit_situation]
 
     def _resize_resources(self):
         for dirname in os.listdir('resources'):
@@ -88,8 +122,8 @@ class Editor:
         j_end = int((self.camera[1] + SCREEN_HEIGHT) // self.tile_size + 1)
         if self.grid:
             self._draw_grid(screen, i_start, j_start, i_end, j_end)
-        for i in range(i_start, i_end):
-            for j in range(j_start, j_end):
+        for i in range(i_start - 1, i_end + 1):
+            for j in range(j_start - 1, j_end + 1):
                 if (i, j) in self.tile_map:
                     tile = self.tile_map[(i, j)]
                     img = self.resources[tile['resource']][tile['variant']]
@@ -204,6 +238,7 @@ if __name__ == "__main__":
 
     ctrl_pressed = False
     shift_pressed = False
+    z_pressed = False
 
     def undo():
         while True:
@@ -248,6 +283,13 @@ if __name__ == "__main__":
         screen.fill((0, 0, 0))
         editor.update()
         editor.render(screen)
+
+        if z_pressed and ctrl_pressed:
+            if shift_pressed:
+                redo()
+            else:
+                undo()
+
         for event in pygame.event.get():
             if event.type == pygame.KEYDOWN:
                 if event.key == pygame.K_LSHIFT:
@@ -298,12 +340,11 @@ if __name__ == "__main__":
                 elif event.key == pygame.K_LCTRL:
                     ctrl_pressed = True
                 elif event.key == pygame.K_z:
-                    if ctrl_pressed and not shift_pressed:
-                        undo()
-                    elif ctrl_pressed and shift_pressed:
-                        redo()
+                    z_pressed = True
                 elif event.key == pygame.K_s:
                     editor.save()
+                elif event.key == pygame.K_t:
+                    editor.transform()
 
             if event.type == pygame.KEYUP:
                 if event.key == pygame.K_LSHIFT:
@@ -319,6 +360,8 @@ if __name__ == "__main__":
                     editor.move[1] = 0
                 elif event.key == pygame.K_LCTRL:
                     ctrl_pressed = False
+                elif event.key == pygame.K_z:
+                    z_pressed = False
             elif event.type == pygame.MOUSEBUTTONDOWN:
                 if event.button == 1:
                     editor.clicked[0] = True
