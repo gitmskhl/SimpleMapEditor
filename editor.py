@@ -1,6 +1,7 @@
 import pygame
 import os
 import json
+from collections import deque
 
 from scripts import utils
 
@@ -11,6 +12,8 @@ if __name__ == "__main__":
 
     SCREEN_WIDTH = 800
     SCREEN_HEIGHT = 600
+
+    MAX_FILLED_SECTOR = 500
 
 # 16 x 16 is the base
 class Editor:
@@ -23,7 +26,8 @@ class Editor:
         ((0, -1), (-1, 0)): 4,
         ((0, -1), (-1, 0), (1, 0)): 5,
         ((0, -1), (1, 0)): 6,
-        ((0, -1), (1, 0), (0, 1)): 7
+        ((0, -1), (1, 0), (0, 1)): 7,
+        ((0, -1), (0, 1), (1, 0), (-1, 0)): 5
     }
     TRANSFORM_RULES = {tuple(sorted(k)): v for k, v in TRANSFORM_RULES.items()}
 
@@ -50,6 +54,9 @@ class Editor:
         self.history = []
         self.history_index = 0
         self.load()
+        # fill
+        self.last_ij_filled = None
+        self.last_filled = None
 
     def transform(self):
         for pos, tile in self.tile_map.items():
@@ -115,6 +122,23 @@ class Editor:
             )
 
 
+    def _get_filled(self, pos):
+        result = []
+        i, j = pos[0] // self.tile_size, pos[1] // self.tile_size
+        if (i, j) in self.tile_map: return []
+        d = deque()
+        d.append((i, j))
+        while len(d) > 0 and len(result) < MAX_FILLED_SECTOR:
+            i_, j_ = d.popleft()
+            result.append((i_, j_))
+            for p, q in [(-1, 0), (1, 0), (0, -1), (0, 1)]:
+                tup = (i_ + p, j_ + q)
+                if (tup not in result) and (tup not in d) and (tup not in self.tile_map):
+                    d.append(tup)
+        self.last_ij_filled = (i, j)
+        self.last_filled = result
+        return result
+
     def render(self, screen):
         i_start = int(self.camera[0] // self.tile_size)
         j_start = int(self.camera[1] // self.tile_size)
@@ -139,10 +163,20 @@ class Editor:
         selected_img = self.resources[self.current_resource][self.current_variant]
         selected_img.set_alpha(100)
         mpos = pygame.mouse.get_pos()
-        if self.grid:
-            pos = ((mpos[0] + self.camera[0])//self.tile_size*self.tile_size - self.camera[0], (mpos[1] + self.camera[1])//self.tile_size*self.tile_size - self.camera[1])
-        else:pos=mpos
-        screen.blit(selected_img, pos)
+        if not self.grid or not fill_activated:
+            if self.grid:
+                pos = ((mpos[0] + self.camera[0])//self.tile_size*self.tile_size - self.camera[0], (mpos[1] + self.camera[1])//self.tile_size*self.tile_size - self.camera[1])
+            else: 
+                pos=mpos
+            screen.blit(selected_img, pos)
+        elif fill_activated:
+            pos = (mpos[0] + self.camera[0], mpos[1] + self.camera[1])
+            if (pos[0] // self.tile_size * self.tile_size, pos[1] // self.tile_size * self.tile_size) == self.last_ij_filled:
+                filled = self.last_filled
+            else:
+                filled = self._get_filled(pos)
+            for i, j in filled:
+                screen.blit(selected_img, (i * self.tile_size - self.camera[0], j * self.tile_size - self.camera[1]))
         selected_img.set_alpha(255)
 
     def _add_history(self, action, pos, tile, type):
@@ -161,10 +195,17 @@ class Editor:
             self.history = self.history[-HISTORY_MAX:]
 
     def _add_grid_tile(self, pos):
-        i = int((pos[0] + self.camera[0]) // self.tile_size)
-        j = int((pos[1] + self.camera[1]) // self.tile_size)
-        self.tile_map[(i, j)] = {'resource': self.current_resource, 'variant': self.current_variant}
-        self._add_history('add', (i, j), self.tile_map[(i, j)], 'grid')
+        if not fill_activated:
+            i = int((pos[0] + self.camera[0]) // self.tile_size)
+            j = int((pos[1] + self.camera[1]) // self.tile_size)
+            self.tile_map[(i, j)] = {'resource': self.current_resource, 'variant': self.current_variant}
+            self._add_history('add', (i, j), self.tile_map[(i, j)], 'grid')
+        else:
+            for i, j in self.last_filled:
+                self.tile_map[(i, j)] = {'resource': self.current_resource, 'variant': self.current_variant}
+            tile = {'resource': self.current_resource, 'variant': self.current_variant}
+            self._add_history('add_filled', self.last_filled, tile, 'grid')
+
 
     def _add_nogrid_tile(self, pos):
         pos = ((pos[0] + self.camera[0]) / self.k, (pos[1] + self.camera[1]) / self.k)
@@ -239,6 +280,7 @@ if __name__ == "__main__":
     ctrl_pressed = False
     shift_pressed = False
     z_pressed = False
+    fill_activated = False
 
     def undo():
         while True:
@@ -252,11 +294,15 @@ if __name__ == "__main__":
                     else: continue
                 else:
                     editor.nogrid_tiles.remove(action['tile'])
-            else:
+            elif action['action'] == 'del':
                 if action['type'] == 'grid':
                     editor.tile_map[action['pos']] = action['tile']
                 else:
                     editor.nogrid_tiles.append(action['tile'])
+            elif action['action'] == 'add_filled':
+                for i, j in action['pos']:
+                    if (i, j) in editor.tile_map:
+                        del editor.tile_map[(i, j)]
             break
 
     def redo():
@@ -269,13 +315,16 @@ if __name__ == "__main__":
                     editor.tile_map[action['pos']] = action['tile']
                 else:
                     editor.nogrid_tiles.append(action['tile'])
-            else:
+            elif action['action'] == 'del':
                 if action['type'] == 'grid':
                     if action['pos'] in editor.tile_map:
                         del editor.tile_map[action['pos']]
                     else: continue
                 else:
                     editor.nogrid_tiles.remove(action['tile'])
+            elif action['action'] == 'add_filled':
+                for i, j in action['pos']:
+                    editor.tile_map[(i, j)] = action['tile']
             break
 
     while True:
@@ -345,6 +394,8 @@ if __name__ == "__main__":
                     editor.save()
                 elif event.key == pygame.K_t:
                     editor.transform()
+                elif event.key == pygame.K_f:
+                    fill_activated = not fill_activated
 
             if event.type == pygame.KEYUP:
                 if event.key == pygame.K_LSHIFT:
