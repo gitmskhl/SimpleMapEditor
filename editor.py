@@ -2,6 +2,7 @@ import pygame
 import os
 import json
 from collections import deque
+import copy
 
 from scripts import utils
 
@@ -57,9 +58,18 @@ class Editor:
         # fill
         self.last_ij_filled = None
         self.last_filled = None
+        # select area
+        self.start_selected_area = []
+        self.selected_area = []
+        self.moving_selected_area = False
+        self.moving_tiles = None
+        self.start_mouse_position = None
 
     def transform(self):
+        sarect = self._get_selected_area_rect()
         for pos, tile in self.tile_map.items():
+            tilerect = pygame.Rect(pos[0] * self.tile_size, pos[1] * self.tile_size, self.tile_size, self.tile_size)
+            if sarect and not tilerect.colliderect(sarect): continue
             if tile['resource'] in Editor.TRANSFORM_TILES:
                 neighbours = []
                 for i in range(-1, 2):
@@ -178,6 +188,32 @@ class Editor:
             for i, j in filled:
                 screen.blit(selected_img, (i * self.tile_size - self.camera[0], j * self.tile_size - self.camera[1]))
         selected_img.set_alpha(255)
+        self._render_selected_area()
+                
+    def _render_selected_area(self):
+        if not self.selected_area or self.selected_area[0] == self.selected_area[1]: return
+        s = tuple(
+            min(self.selected_area[0][i], self.selected_area[1][i])
+            for i in range(2)
+        )
+        e = tuple(
+            max(self.selected_area[0][i], self.selected_area[1][i])
+            for i in range(2)
+        )
+        pygame.draw.rect(screen, (255, 255, 255), (s[0] - self.camera[0], s[1] - self.camera[1], e[0] - s[0], e[1] - s[1]), 1)
+
+
+    def _get_selected_area_rect(self):
+        if not self.selected_area or self.selected_area[0] == self.selected_area[1]: return None
+        s = tuple(
+            min(self.selected_area[0][i], self.selected_area[1][i])
+            for i in range(2)
+        )
+        e = tuple(
+            max(self.selected_area[0][i], self.selected_area[1][i])
+            for i in range(2)
+        )
+        return pygame.Rect(s[0], s[1], e[0] - s[0], e[1] - s[1])
 
     def _add_history(self, action, pos, tile, type):
         self.history = self.history[:self.history_index]
@@ -231,18 +267,75 @@ class Editor:
                 self.history = self.history[:self.history_index]
                 break
 
+    def _remove_tiles_in_selected_area(self):
+        sarect = self._get_selected_area_rect()
+        if not sarect: return
+        for pos, _ in self._get_tiles_in_area(sarect):
+            del self.tile_map[pos]
+
+    def _save_moved_tiles(self):
+        mx, my = pygame.mouse.get_pos()
+        mx += self.camera[0]
+        my += self.camera[1]
+        shiftx = mx - self.start_mouse_position[0]
+        shifty = my - self.start_mouse_position[1]
+        for pos, tile in self.moving_tiles:
+            xrel = pos[0] * self.tile_size + shiftx
+            yrel = pos[1] * self.tile_size + shifty
+            tx = xrel // self.tile_size
+            ty = yrel // self.tile_size
+            self.tile_map[(tx, ty)] = tile
+            del self.tile_map[pos]
+
+# This algo can be more efficient
+    def _get_tiles_in_area(self, rect):
+        tiles = []
+        for pos, tile in self.tile_map.items():
+            tilerect = pygame.Rect(pos[0] * self.tile_size, pos[1] * self.tile_size, self.tile_size, self.tile_size)
+            if tilerect.colliderect(rect):
+                tiles.append((pos, tile))
+        return tiles
+    
+
+    def _is_start_moving_selected_area(self):
+        sarect = self._get_selected_area_rect()
+        mpos = pygame.mouse.get_pos()
+        return self.pressed[0] and sarect and sarect.collidepoint(mpos[0] + self.camera[0], mpos[1] + self.camera[1])
+
     def update(self):
         self.camera[0] += self.move[0]
         self.camera[1] += self.move[1]
-        if self.clicked[0] or (self.pressed[0] and self.shift):
-            pos = pygame.mouse.get_pos()
-            if self.grid: self._add_grid_tile(pos)
-            else: self._add_nogrid_tile(pos)
-        elif self.clicked[2] or (self.pressed[2] and self.shift):
-            pos = pygame.mouse.get_pos()
-            if self.grid: self._del_grid_tile(pos)
-            else: self._del_nogrid_tile(pos)
-            
+
+        if self.moving_selected_area:
+            mx, my = pygame.mouse.get_pos()
+            mx += self.camera[0]
+            my += self.camera[1]
+            shiftx = mx - self.start_mouse_position[0]
+            shifty = my - self.start_mouse_position[1]
+            for i in range(2):
+                self.selected_area[i][0] = self.start_selected_area[i][0] + shiftx
+                self.selected_area[i][1] = self.start_selected_area[i][1] + shifty
+             
+        if not ctrl_pressed:
+            sarect = self._get_selected_area_rect()
+            mpos = pygame.mouse.get_pos()
+            if self._is_start_moving_selected_area():
+               if not self.moving_selected_area:
+                    self.start_selected_area = copy.deepcopy(self.selected_area)
+                    self.moving_tiles = self._get_tiles_in_area(sarect)
+                    self.start_mouse_position = (mpos[0] + self.camera[0], mpos[1] + self.camera[1])
+               self.moving_selected_area = True
+
+            if self.moving_selected_area:
+                pass
+            elif self.clicked[0] or (self.pressed[0] and self.shift):
+                pos = pygame.mouse.get_pos()
+                if self.grid: self._add_grid_tile(pos)
+                else: self._add_nogrid_tile(pos)
+            elif self.clicked[2] or (self.pressed[2] and self.shift):
+                pos = pygame.mouse.get_pos()
+                if self.grid: self._del_grid_tile(pos)
+                else: self._del_nogrid_tile(pos)
         self.clicked = [False, False, False]
 
     def save(self):
@@ -279,6 +372,7 @@ if __name__ == "__main__":
 
     ctrl_pressed = False
     shift_pressed = False
+    alt_pressed = False
     z_pressed = False
     fill_activated = False
 
@@ -333,11 +427,17 @@ if __name__ == "__main__":
         editor.update()
         editor.render(screen)
 
-        if z_pressed and ctrl_pressed:
+        if z_pressed and ctrl_pressed and alt_pressed:
             if shift_pressed:
                 redo()
             else:
                 undo()
+
+        if ctrl_pressed and editor.selected_area:
+            mx, my = pygame.mouse.get_pos()
+            mx += editor.camera[0]
+            my+= editor.camera[1]
+            editor.selected_area[-1] = [mx, my]
 
         for event in pygame.event.get():
             if event.type == pygame.KEYDOWN:
@@ -390,12 +490,20 @@ if __name__ == "__main__":
                     ctrl_pressed = True
                 elif event.key == pygame.K_z:
                     z_pressed = True
+                    if shift_pressed:
+                        redo()
+                    else:
+                        undo()
                 elif event.key == pygame.K_s:
                     editor.save()
                 elif event.key == pygame.K_t:
                     editor.transform()
                 elif event.key == pygame.K_f:
                     fill_activated = not fill_activated
+                elif event.key == pygame.K_LALT:
+                    alt_pressed = True
+                elif event.key == pygame.K_BACKSPACE and editor.selected_area:
+                    editor._remove_tiles_in_selected_area()
 
             if event.type == pygame.KEYUP:
                 if event.key == pygame.K_LSHIFT:
@@ -413,16 +521,32 @@ if __name__ == "__main__":
                     ctrl_pressed = False
                 elif event.key == pygame.K_z:
                     z_pressed = False
+                elif event.key == pygame.K_LALT:
+                    alt_pressed = False
             elif event.type == pygame.MOUSEBUTTONDOWN:
                 if event.button == 1:
                     editor.clicked[0] = True
                     editor.pressed[0] = True
+                    # selecting area
+                    if ctrl_pressed:
+                        mx, my = pygame.mouse.get_pos()
+                        mx += editor.camera[0]
+                        my+= editor.camera[1]
+                        editor.selected_area = [[mx, my]] * 2
+                    elif not editor._is_start_moving_selected_area():
+                        if editor.selected_area:
+                            editor.clicked[0] = False
+                            editor.pressed[0] = False
+                        editor.selected_area = []
                 elif event.button == 3:
                     editor.clicked[2] = True
                     editor.pressed[2] = True
             elif event.type == pygame.MOUSEBUTTONUP:
                 if event.button == 1:
                     editor.pressed[0] = False
+                    if editor.moving_selected_area:
+                        editor._save_moved_tiles()
+                    editor.moving_selected_area = False
                 elif event.button == 3:
                     editor.pressed[2] = False
 
