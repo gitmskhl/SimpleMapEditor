@@ -65,7 +65,11 @@ class Editor:
         self.moving_tiles = None
         self.moving_offgrid_tiles = None
         self.start_mouse_position = None
+        # copy
+        self.copied_grid_tiles = None
+        self.copied_offgrid_tiles = None
 
+    
     def transform(self):
         sarect = self._get_selected_area_rect()
         for pos, tile in self.tile_map.items():
@@ -177,6 +181,19 @@ class Editor:
             tile_img.set_alpha(255)
 
 
+    def _render_copied_tiles(self):
+        if self.copied_grid_tiles:
+            for pos, tile in self.copied_grid_tiles:
+                img = self.resources[tile['resource']][tile['variant']]
+                x, y = pos[0] * self.tile_size - self.camera[0], pos[1] * self.tile_size - self.camera[1]
+                screen.blit(img, (x, y))
+        if self.copied_offgrid_tiles:
+            for tile in self.copied_offgrid_tiles:
+                img = self.resources[tile['resource']][tile['variant']]
+                pos = tile['pos']
+                x, y = pos[0] * self.k - self.camera[0], pos[1] * self.k - self.camera[1]
+                screen.blit(img, (x, y))
+
     def render(self, screen):
         i_start = int(self.camera[0] // self.tile_size)
         j_start = int(self.camera[1] // self.tile_size)
@@ -222,6 +239,7 @@ class Editor:
         self._render_selected_area()
         if self.moving_selected_area:
             self._render_moving_tiles()
+        self._render_copied_tiles()
                 
     def _render_selected_area(self):
         if not self.selected_area or self.selected_area[0] == self.selected_area[1]: return
@@ -313,13 +331,35 @@ class Editor:
             'offgrid': offgridtiles_in_area
         }, None)
 
+    def _copy_sector(self):
+        if not self.selected_area: return
+        sarect = self._get_selected_area_rect()
+        self.copied_grid_tiles = copy.deepcopy(self._get_tiles_in_area(sarect))
+        self.copied_offgrid_tiles = copy.deepcopy(self._get_offgrid_tiles_in_area(sarect))
+
+    def _save_copy_sector(self):
+        info = {}
+        if self.copied_grid_tiles:
+            for pos, tile in self.copied_grid_tiles:
+                self.tile_map[pos] = tile
+            info['grid'] = self.copied_grid_tiles
+        if self.copied_offgrid_tiles:
+            self.nogrid_tiles.extend(self.copied_offgrid_tiles)
+            info['offgrid'] = self.copied_offgrid_tiles
+        self.copied_grid_tiles = None
+        self.copied_offgrid_tiles = None
+        if info:
+            self._add_history('copy_sector', None, info, None)
+
     def _save_moved_tiles(self):
         mx, my = pygame.mouse.get_pos()
         mx += self.camera[0]
         my += self.camera[1]
         shiftx = mx - self.start_mouse_position[0]
         shifty = my - self.start_mouse_position[1]
-        self._add_history('move_selected_area', (shiftx, shifty), self.moving_tiles, 'grid')
+        info = {
+            'grid': self.moving_tiles
+        }
         for pos, _ in self.moving_tiles:
             del self.tile_map[pos]
         for pos, tile in self.moving_tiles:
@@ -328,12 +368,14 @@ class Editor:
             tx = xrel // self.tile_size
             ty = yrel // self.tile_size
             self.tile_map[(tx, ty)] = tile
-        if not self.moving_offgrid_tiles: return
-        for tile in self.moving_offgrid_tiles:
-            tile['pos'] = (
-                (tile['pos'][0] * self.k + shiftx) / self.k,
-                (tile['pos'][1] * self.k + shifty) / self.k
-            )
+        if self.moving_offgrid_tiles:
+            info['offgrid'] = self.moving_offgrid_tiles
+            for tile in self.moving_offgrid_tiles:
+                tile['pos'] = (
+                    (tile['pos'][0] * self.k + shiftx) / self.k,
+                    (tile['pos'][1] * self.k + shifty) / self.k
+                )
+        self._add_history('move_selected_area', (shiftx, shifty), info, None)
 
     def _get_offgrid_tiles_in_area(self, rect):
         tiles = []
@@ -458,21 +500,39 @@ if __name__ == "__main__":
                         del editor.tile_map[(i, j)]
             elif action['action'] == 'move_selected_area':
                 shiftx, shifty = action['pos']
-                for pos, tile in action['tile']:
+                grid_tiles = action['tile']['grid']
+                offgrid_tiles = action['tile']['offgrid'] if 'offgrid' in action['tile'] else []
+                for pos, tile in grid_tiles:
                     newx = pos[0] * editor.tile_size + shiftx
                     newy = pos[1] * editor.tile_size + shifty
                     x = newx // editor.tile_size
                     y = newy // editor.tile_size
                     if (x, y) in editor.tile_map:
                         del editor.tile_map[(x, y)]
-                for pos, tile in action['tile']:
+                for pos, tile in grid_tiles:
                     editor.tile_map[pos] = tile
+                
+                for tile in offgrid_tiles:
+                    tile['pos'] = (
+                        (tile['pos'][0] * editor.k - shiftx) / editor.k,
+                        (tile['pos'][1] * editor.k - shifty) / editor.k
+                    )
+
             elif action['action'] == 'remove_selected_area':
                 tiles_in_area = action['tile']['grid']
                 offgrid_tiles_in_area = action['tile']['offgrid']
                 for pos, tile in tiles_in_area:
                     editor.tile_map[pos] = tile
                 editor.nogrid_tiles.extend(offgrid_tiles_in_area)
+            elif action['action'] == 'copy_sector':
+                grid_tiles = action['tile']['grid'] if 'grid' in action['tile'] else []
+                offgrid_tiles = action['tile']['offgrid'] if 'offgrid' in action['tile'] else []
+                for pos, tile in grid_tiles:
+                    if pos in editor.tile_map:
+                        del editor.tile_map[pos]
+                for tile in offgrid_tiles:
+                    if tile in editor.nogrid_tiles:
+                        editor.nogrid_tiles.remove(tile)
             break
 
     def redo():
@@ -496,16 +556,25 @@ if __name__ == "__main__":
                 for i, j in action['pos']:
                     editor.tile_map[(i, j)] = action['tile']
             elif action['action'] == 'move_selected_area':
+                grid_tiles = action['tile']['grid']
+                offgrid_tiles = action['tile']['offgrid'] if 'offgrid' in action['tile'] else []
                 shiftx, shifty = action['pos']
-                for pos, tile in action['tile']:
+                for pos, tile in grid_tiles:
                     if pos in editor.tile_map:
                         del editor.tile_map[pos]
-                for pos, tile in action['tile']:
+                for pos, tile in grid_tiles:
                     newx = pos[0] * editor.tile_size + shiftx
                     newy = pos[1] * editor.tile_size + shifty
                     x = newx // editor.tile_size
                     y = newy // editor.tile_size
                     editor.tile_map[(x, y)] = tile
+
+                for tile in offgrid_tiles:
+                    tile['pos'] = (
+                        (tile['pos'][0]*editor.k + shiftx) / editor.k,
+                        (tile['pos'][1]*editor.k + shifty) / editor.k
+                    )
+
             elif action['action'] == 'remove_selected_area':
                 tiles_in_area = action['tile']['grid']
                 offgrid_tiles_in_area = action['tile']['offgrid']
@@ -515,6 +584,12 @@ if __name__ == "__main__":
                 for tile in offgrid_tiles_in_area:
                     if tile in editor.nogrid_tiles:
                         editor.nogrid_tiles.remove(tile)
+            elif action['action'] == 'copy_sector':
+                grid_tiles = action['tile']['grid'] if 'grid' in action['tile'] else []
+                offgrid_tiles = action['tile']['offgrid'] if 'offgrid' in action['tile'] else []
+                for pos, tile in grid_tiles:
+                    editor.tile_map[pos] = tile
+                editor.nogrid_tiles.extend(offgrid_tiles)
             break
 
     while True:
@@ -600,6 +675,9 @@ if __name__ == "__main__":
                     alt_pressed = True
                 elif event.key == pygame.K_BACKSPACE and editor.selected_area:
                     editor._remove_tiles_in_selected_area()
+                elif event.key == pygame.K_c:
+                    if ctrl_pressed:
+                        editor._copy_sector()
 
             if event.type == pygame.KEYUP:
                 if event.key == pygame.K_LSHIFT:
@@ -634,6 +712,7 @@ if __name__ == "__main__":
                             editor.clicked[0] = False
                             editor.pressed[0] = False
                         editor.selected_area = []
+                        editor._save_copy_sector()
                 elif event.button == 3:
                     editor.clicked[2] = True
                     editor.pressed[2] = True
