@@ -301,12 +301,13 @@ class Editor:
         shiftx = mx - self.start_mouse_position[0]
         shifty = my - self.start_mouse_position[1]
         self._add_history('move_selected_area', (shiftx, shifty), self.moving_tiles, 'grid')
+        for pos, _ in self.moving_tiles:
+            del self.tile_map[pos]
         for pos, tile in self.moving_tiles:
             xrel = pos[0] * self.tile_size + shiftx
             yrel = pos[1] * self.tile_size + shifty
             tx = xrel // self.tile_size
             ty = yrel // self.tile_size
-            del self.tile_map[pos]
             self.tile_map[(tx, ty)] = tile
 
 # This algo can be more efficient
@@ -428,6 +429,7 @@ if __name__ == "__main__":
                     y = newy // editor.tile_size
                     if (x, y) in editor.tile_map:
                         del editor.tile_map[(x, y)]
+                for pos, tile in action['tile']:
                     editor.tile_map[pos] = tile
             break
 
@@ -454,12 +456,13 @@ if __name__ == "__main__":
             elif action['action'] == 'move_selected_area':
                 shiftx, shifty = action['pos']
                 for pos, tile in action['tile']:
+                    if pos in editor.tile_map:
+                        del editor.tile_map[pos]
+                for pos, tile in action['tile']:
                     newx = pos[0] * editor.tile_size + shiftx
                     newy = pos[1] * editor.tile_size + shifty
                     x = newx // editor.tile_size
                     y = newy // editor.tile_size
-                    if pos in editor.tile_map:
-                        del editor.tile_map[pos]
                     editor.tile_map[(x, y)] = tile
             break
 
