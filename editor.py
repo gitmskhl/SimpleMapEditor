@@ -173,7 +173,7 @@ class Editor:
         j_end = int((self.camera[1] + SCREEN_HEIGHT) // self.tile_size + 1)
         if self.grid:
             self._draw_grid(screen, i_start, j_start, i_end, j_end)
-        moving_tiles_positions = set([x for x, _ in self.moving_tiles]) if self.moving_tiles else set()
+        moving_tiles_positions = set([x for x, _ in self.moving_tiles]) if self.moving_selected_area else set()
         for i in range(i_start - 1, i_end + 1):
             for j in range(j_start - 1, j_end + 1):
                 if (i, j) in moving_tiles_positions: continue
@@ -300,13 +300,14 @@ class Editor:
         my += self.camera[1]
         shiftx = mx - self.start_mouse_position[0]
         shifty = my - self.start_mouse_position[1]
+        self._add_history('move_selected_area', (shiftx, shifty), self.moving_tiles, 'grid')
         for pos, tile in self.moving_tiles:
             xrel = pos[0] * self.tile_size + shiftx
             yrel = pos[1] * self.tile_size + shifty
             tx = xrel // self.tile_size
             ty = yrel // self.tile_size
-            self.tile_map[(tx, ty)] = tile
             del self.tile_map[pos]
+            self.tile_map[(tx, ty)] = tile
 
 # This algo can be more efficient
     def _get_tiles_in_area(self, rect):
@@ -418,6 +419,16 @@ if __name__ == "__main__":
                 for i, j in action['pos']:
                     if (i, j) in editor.tile_map:
                         del editor.tile_map[(i, j)]
+            elif action['action'] == 'move_selected_area':
+                shiftx, shifty = action['pos']
+                for pos, tile in action['tile']:
+                    newx = pos[0] * editor.tile_size + shiftx
+                    newy = pos[1] * editor.tile_size + shifty
+                    x = newx // editor.tile_size
+                    y = newy // editor.tile_size
+                    if (x, y) in editor.tile_map:
+                        del editor.tile_map[(x, y)]
+                    editor.tile_map[pos] = tile
             break
 
     def redo():
@@ -440,6 +451,16 @@ if __name__ == "__main__":
             elif action['action'] == 'add_filled':
                 for i, j in action['pos']:
                     editor.tile_map[(i, j)] = action['tile']
+            elif action['action'] == 'move_selected_area':
+                shiftx, shifty = action['pos']
+                for pos, tile in action['tile']:
+                    newx = pos[0] * editor.tile_size + shiftx
+                    newy = pos[1] * editor.tile_size + shifty
+                    x = newx // editor.tile_size
+                    y = newy // editor.tile_size
+                    if pos in editor.tile_map:
+                        del editor.tile_map[pos]
+                    editor.tile_map[(x, y)] = tile
             break
 
     while True:
