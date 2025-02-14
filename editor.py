@@ -279,7 +279,6 @@ class Editor:
             self._add_history('delete', (i, j), tile, 'grid')
 
     def _del_nogrid_tile(self, pos):
-        # pos = (pos[0] + self.camera[0], pos[1] + self.camera[1])
         pos = ((pos[0] + self.camera[0]) / self.k, (pos[1] + self.camera[1]) / self.k)
         for tile in self.nogrid_tiles:
             img = self.resources[tile['resource']][tile['variant']]
@@ -291,8 +290,16 @@ class Editor:
     def _remove_tiles_in_selected_area(self):
         sarect = self._get_selected_area_rect()
         if not sarect: return
-        for pos, _ in self._get_tiles_in_area(sarect):
+        tiles_in_area = self._get_tiles_in_area(sarect)
+        for pos, _ in tiles_in_area:
             del self.tile_map[pos]
+        offgridtiles_in_area = self._get_offgrid_tiles_in_area(sarect)
+        for tile in offgridtiles_in_area:
+            self.nogrid_tiles.remove(tile)
+        self._add_history('remove_selected_area', None, {
+            'grid': tiles_in_area,
+            'offgrid': offgridtiles_in_area
+        }, None)
 
     def _save_moved_tiles(self):
         mx, my = pygame.mouse.get_pos()
@@ -309,6 +316,16 @@ class Editor:
             tx = xrel // self.tile_size
             ty = yrel // self.tile_size
             self.tile_map[(tx, ty)] = tile
+
+    def _get_offgrid_tiles_in_area(self, rect):
+        tiles = []
+        for tile in self.nogrid_tiles:
+            tile_rect = self.resources[tile['resource']][tile['variant']].get_rect()
+            tile_rect.x = tile['pos'][0]
+            tile_rect.y = tile['pos'][1]
+            if tile_rect.colliderect(rect):
+                tiles.append(tile)
+        return tiles
 
 # This algo can be more efficient
     def _get_tiles_in_area(self, rect):
@@ -431,6 +448,12 @@ if __name__ == "__main__":
                         del editor.tile_map[(x, y)]
                 for pos, tile in action['tile']:
                     editor.tile_map[pos] = tile
+            elif action['action'] == 'remove_selected_area':
+                tiles_in_area = action['tile']['grid']
+                offgrid_tiles_in_area = action['tile']['offgrid']
+                for pos, tile in tiles_in_area:
+                    editor.tile_map[pos] = tile
+                editor.nogrid_tiles.extend(offgrid_tiles_in_area)
             break
 
     def redo():
@@ -464,6 +487,15 @@ if __name__ == "__main__":
                     x = newx // editor.tile_size
                     y = newy // editor.tile_size
                     editor.tile_map[(x, y)] = tile
+            elif action['action'] == 'remove_selected_area':
+                tiles_in_area = action['tile']['grid']
+                offgrid_tiles_in_area = action['tile']['offgrid']
+                for pos, tile in tiles_in_area:
+                    if pos in editor.tile_map:
+                        del editor.tile_map[pos]
+                for tile in offgrid_tiles_in_area:
+                    if tile in editor.nogrid_tiles:
+                        editor.nogrid_tiles.remove(tile)
             break
 
     while True:
