@@ -149,6 +149,23 @@ class Editor:
         self.last_filled = result
         return result
 
+    def _render_moving_tiles(self):
+        if not self.moving_tiles: return
+        mx, my = pygame.mouse.get_pos()
+        mx += self.camera[0]
+        my += self.camera[1]
+        shiftx = mx - self.start_mouse_position[0]
+        shifty = my - self.start_mouse_position[1]
+        for pos, tile in self.moving_tiles:
+            xrel = pos[0] * self.tile_size + shiftx
+            yrel = pos[1] * self.tile_size + shifty
+            tx = xrel // self.tile_size
+            ty = yrel // self.tile_size
+            tile_img = self.resources[tile['resource']][tile['variant']]
+            tile_img.set_alpha(100)
+            screen.blit(tile_img, (tx * self.tile_size - self.camera[0], ty * self.tile_size - self.camera[1]))
+            tile_img.set_alpha(255)
+
     def render(self, screen):
         i_start = int(self.camera[0] // self.tile_size)
         j_start = int(self.camera[1] // self.tile_size)
@@ -156,8 +173,10 @@ class Editor:
         j_end = int((self.camera[1] + SCREEN_HEIGHT) // self.tile_size + 1)
         if self.grid:
             self._draw_grid(screen, i_start, j_start, i_end, j_end)
+        moving_tiles_positions = set([x for x, _ in self.moving_tiles]) if self.moving_tiles else set()
         for i in range(i_start - 1, i_end + 1):
             for j in range(j_start - 1, j_end + 1):
+                if (i, j) in moving_tiles_positions: continue
                 if (i, j) in self.tile_map:
                     tile = self.tile_map[(i, j)]
                     img = self.resources[tile['resource']][tile['variant']]
@@ -189,6 +208,8 @@ class Editor:
                 screen.blit(selected_img, (i * self.tile_size - self.camera[0], j * self.tile_size - self.camera[1]))
         selected_img.set_alpha(255)
         self._render_selected_area()
+        if self.moving_selected_area:
+            self._render_moving_tiles()
                 
     def _render_selected_area(self):
         if not self.selected_area or self.selected_area[0] == self.selected_area[1]: return
