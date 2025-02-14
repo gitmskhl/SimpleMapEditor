@@ -63,6 +63,7 @@ class Editor:
         self.selected_area = []
         self.moving_selected_area = False
         self.moving_tiles = None
+        self.moving_offgrid_tiles = None
         self.start_mouse_position = None
 
     def transform(self):
@@ -165,6 +166,16 @@ class Editor:
             tile_img.set_alpha(100)
             screen.blit(tile_img, (tx * self.tile_size - self.camera[0], ty * self.tile_size - self.camera[1]))
             tile_img.set_alpha(255)
+        if not self.moving_offgrid_tiles: return
+        for tile in self.moving_offgrid_tiles:
+            pos = tile['pos']
+            xrel = pos[0] * self.k + shiftx
+            yrel = pos[1] * self.k + shifty
+            tile_img = self.resources[tile['resource']][tile['variant']]
+            tile_img.set_alpha(100)
+            screen.blit(tile_img, (xrel - self.camera[0], yrel - self.camera[1]))
+            tile_img.set_alpha(255)
+
 
     def render(self, screen):
         i_start = int(self.camera[0] // self.tile_size)
@@ -182,6 +193,7 @@ class Editor:
                     img = self.resources[tile['resource']][tile['variant']]
                     screen.blit(img, (i * self.tile_size - self.camera[0], j * self.tile_size - self.camera[1]))
         for tile in self.nogrid_tiles:
+            if self.moving_selected_area and tile in self.moving_offgrid_tiles: continue
             img = self.resources[tile['resource']][tile['variant']]
             if tile['pos'][0] * self.k - self.camera[0] + img.get_width() < 0 or tile['pos'][0] * self.k - self.camera[0] > SCREEN_WIDTH:
                 continue
@@ -316,13 +328,19 @@ class Editor:
             tx = xrel // self.tile_size
             ty = yrel // self.tile_size
             self.tile_map[(tx, ty)] = tile
+        if not self.moving_offgrid_tiles: return
+        for tile in self.moving_offgrid_tiles:
+            tile['pos'] = (
+                (tile['pos'][0] * self.k + shiftx) / self.k,
+                (tile['pos'][1] * self.k + shifty) / self.k
+            )
 
     def _get_offgrid_tiles_in_area(self, rect):
         tiles = []
         for tile in self.nogrid_tiles:
             tile_rect = self.resources[tile['resource']][tile['variant']].get_rect()
-            tile_rect.x = tile['pos'][0]
-            tile_rect.y = tile['pos'][1]
+            tile_rect.x = tile['pos'][0] * self.k
+            tile_rect.y = tile['pos'][1] * self.k
             if tile_rect.colliderect(rect):
                 tiles.append(tile)
         return tiles
@@ -363,6 +381,7 @@ class Editor:
                if not self.moving_selected_area:
                     self.start_selected_area = copy.deepcopy(self.selected_area)
                     self.moving_tiles = self._get_tiles_in_area(sarect)
+                    self.moving_offgrid_tiles = self._get_offgrid_tiles_in_area(sarect)
                     self.start_mouse_position = (mpos[0] + self.camera[0], mpos[1] + self.camera[1])
                self.moving_selected_area = True
 
