@@ -443,7 +443,7 @@ class Editor:
         with open('map.json', 'w') as f:
             json.dump(
                 {
-                    'tile_map': {str(k): v for k, v in self.tile_map.items()},
+                    'tile_map': {str((int(k[0]), int(k[1]))): v for k, v in self.tile_map.items()},
                     'nogrid_tiles': self.nogrid_tiles,
                     'tile_size': self.tile_size,
                     'camera_x': self.camera[0],
