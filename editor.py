@@ -40,8 +40,9 @@ class Editor:
     TRANSFORM_RULES = {tuple(sorted(k)): v for k, v in TRANSFORM_RULES.items()}
 
     def __init__(self):
-        self.base_tile_size = 48
-        self.tile_size = 24
+        self.base_tile_size = 48 # the original size of the tiles (on the images)
+        self.tile_size = 24 # the current size of the tiles
+        self.change_tiles_size = 16 # how much size of the tiles will be changed if zoom
         self.k = self.tile_size / self.base_tile_size
         self.tile_map = {}
         self.nogrid_tiles = []
@@ -630,19 +631,19 @@ if __name__ == "__main__":
                     pygame.quit()
                     exit()
                 elif event.key == pygame.K_EQUALS:
-                    editor.tile_size += editor.base_tile_size
+                    editor.tile_size += editor.change_tiles_size
                     editor.camera[0] /= editor.k
                     editor.camera[1] /= editor.k
-                    editor.k += 1
+                    editor.k = editor.tile_size / editor.base_tile_size
                     editor.camera[0] *= editor.k
                     editor.camera[1] *= editor.k
                     editor._resize_resources()
                 elif event.key == pygame.K_MINUS:
-                    if editor.tile_size > editor.base_tile_size:
-                        editor.tile_size -= editor.base_tile_size
+                    if editor.tile_size > editor.change_tiles_size:
+                        editor.tile_size -= editor.change_tiles_size
                         editor.camera[0] /= editor.k
                         editor.camera[1] /= editor.k
-                        editor.k -= 1
+                        editor.k = editor.tile_size / editor.base_tile_size
                         editor.camera[0] *= editor.k
                         editor.camera[1] *= editor.k
                         editor._resize_resources()
