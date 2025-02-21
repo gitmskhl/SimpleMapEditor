@@ -1,12 +1,19 @@
 import pygame
 import os
+import sys
 import json
 from collections import deque
 import copy
-
 from scripts import utils
 
 if __name__ == "__main__":
+    script_dir = os.path.dirname(os.path.abspath(sys.argv[0]))
+    os.chdir(script_dir)
+
+    RESOURCES_DIR = 'resources' # RELATIVE PATH TO THE RESOURCES
+    MAP_DIR = '.' # RELATIVE PATH TO THE DIR WHERE map.json files is placed
+
+
     pygame.init()
     HISTORY_MAX=10000
     GRAY = (50,) * 3
@@ -33,9 +40,9 @@ class Editor:
     TRANSFORM_RULES = {tuple(sorted(k)): v for k, v in TRANSFORM_RULES.items()}
 
     def __init__(self):
-        self.base_tile_size = 16
-        self.tile_size = 16
-        self.k = 1
+        self.base_tile_size = 48
+        self.tile_size = 24
+        self.k = self.tile_size / self.base_tile_size
         self.tile_map = {}
         self.nogrid_tiles = []
         self._load_resources()
@@ -95,16 +102,17 @@ class Editor:
                         tile['variant'] = Editor.TRANSFORM_RULES[suit_situation]
 
     def _resize_resources(self):
-        for dirname in os.listdir('resources'):
-            self.resources[dirname] = utils.load_images('resources/' + dirname, self.tile_size / 16, (0, 0, 0))
+        dirpath = os.path.join(RESOURCES_DIR)
+        for dirname in os.listdir(dirpath):
+            self.resources[dirname] = utils.load_images(os.path.join(dirpath, dirname), self.tile_size / self.base_tile_size, (0, 0, 0))
 
     def _load_resources(self):
         self.resources = {}
         self.resource_props = {}
-        for dirname in os.listdir('resources'):
-            self.resources[dirname] = utils.load_images('resources/' + dirname, 1, (0, 0, 0))
+        for dirname in os.listdir(RESOURCES_DIR):
+            self.resources[dirname] = utils.load_images(os.path.join(RESOURCES_DIR, dirname), 1, (0, 0, 0))
             res_count = len(self.resources[dirname])
-            info_path = os.path.join('resources', dirname, 'info.txt')
+            info_path = os.path.join(RESOURCES_DIR, dirname, 'info.txt')
             self.resource_props[dirname] = {}
             if os.path.exists(info_path):
                 with open(info_path, 'r') as f:
@@ -440,11 +448,13 @@ class Editor:
         self.clicked = [False, False, False]
 
     def save(self):
-        with open('map.json', 'w') as f:
+        path = os.path.join(MAP_DIR, 'map.json')
+        with open(path, 'w') as f:
             json.dump(
                 {
                     'tile_map': {str((int(k[0]), int(k[1]))): v for k, v in self.tile_map.items()},
                     'nogrid_tiles': self.nogrid_tiles,
+                    'base_tile_size': self.base_tile_size,
                     'tile_size': self.tile_size,
                     'camera_x': self.camera[0],
                     'camera_y': self.camera[1],
@@ -453,14 +463,15 @@ class Editor:
             )
 
     def load(self):
+        path = os.path.join(MAP_DIR, 'map.json')
         try:
-            with open('map.json', 'r') as f:
+            with open(path, 'r') as f:
                 data = json.load(f)
                 self.tile_map = {tuple(map(int, [x.replace('(', '').replace(')', '') for x in k.split(',')])): v for k, v in data['tile_map'].items()}
                 self.nogrid_tiles = data['nogrid_tiles']
                 self.tile_size = data['tile_size']
                 self.camera = [data['camera_x'], data['camera_y']]
-                self.k = self.tile_size // 16
+                self.k = self.tile_size / self.base_tile_size
                 self._resize_resources()
         except FileNotFoundError:
             pass    
@@ -619,7 +630,7 @@ if __name__ == "__main__":
                     pygame.quit()
                     exit()
                 elif event.key == pygame.K_EQUALS:
-                    editor.tile_size += 16
+                    editor.tile_size += editor.base_tile_size
                     editor.camera[0] /= editor.k
                     editor.camera[1] /= editor.k
                     editor.k += 1
@@ -627,8 +638,8 @@ if __name__ == "__main__":
                     editor.camera[1] *= editor.k
                     editor._resize_resources()
                 elif event.key == pygame.K_MINUS:
-                    if editor.tile_size > 16:
-                        editor.tile_size -= 16
+                    if editor.tile_size > editor.base_tile_size:
+                        editor.tile_size -= editor.base_tile_size
                         editor.camera[0] /= editor.k
                         editor.camera[1] /= editor.k
                         editor.k -= 1
