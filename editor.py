@@ -4,14 +4,24 @@ import sys
 import json
 from collections import deque
 import copy
+import configparser
 from scripts import utils
 
 if __name__ == "__main__":
     script_dir = os.path.dirname(os.path.abspath(sys.argv[0]))
     os.chdir(script_dir)
 
-    RESOURCES_DIR = 'resources' # RELATIVE PATH TO THE RESOURCES
-    MAP_DIR = '.' # RELATIVE PATH TO THE DIR WHERE map.json files is placed
+    config = configparser.ConfigParser()
+    if not os.path.exists('config.pr'):
+        print('Can not find `config.pr` file')
+        print('`resources` directory will be used for resources')
+        print('The map file will be saved in this directory')
+        RESOURCES_DIR = 'resources' # RELATIVE PATH TO THE RESOURCES
+        MAP_DIR = '.' # RELATIVE PATH TO THE DIR WHERE map.json file is placed
+    else:
+        config.read('config.pr')
+        RESOURCES_DIR = config.get('PATH', 'RESOURCES_DIR')
+        MAP_DIR = config.get('PATH', 'MAP_DIR')
 
 
     pygame.init()
