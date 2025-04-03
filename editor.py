@@ -7,6 +7,8 @@ import copy
 import configparser
 from scripts import utils
 
+MAP_FILE='map.json'
+
 if __name__ == "__main__":
     script_dir = os.path.dirname(os.path.abspath(sys.argv[0]))
     os.chdir(script_dir)
@@ -22,6 +24,10 @@ if __name__ == "__main__":
         config.read('config.pr')
         RESOURCES_DIR = config.get('PATH', 'RESOURCES_DIR')
         MAP_DIR = config.get('PATH', 'MAP_DIR')
+        if 'MAP_FILE' in config['PATH']:
+            MAP_FILE = config.get('PATH', 'MAP_FILE')
+        
+        loaded_from_file = True # loading was successful
 
 
     pygame.init()
@@ -459,13 +465,14 @@ class Editor:
         self.clicked = [False, False, False]
 
     def save(self):
-        path = os.path.join(MAP_DIR, 'map.json')
+        path = os.path.join(MAP_DIR, MAP_FILE)
         with open(path, 'w') as f:
             json.dump(
                 {
                     'tile_map': {str((int(k[0]), int(k[1]))): v for k, v in self.tile_map.items()},
                     'nogrid_tiles': self.nogrid_tiles,
                     'base_tile_size': self.base_tile_size,
+                    'change_tiles_size': self.change_tiles_size,
                     'tile_size': self.tile_size,
                     'camera_x': self.camera[0],
                     'camera_y': self.camera[1],
@@ -474,24 +481,33 @@ class Editor:
             )
 
     def load(self):
-        path = os.path.join(MAP_DIR, 'map.json')
+        global loaded_from_file
+        path = os.path.join(MAP_DIR, MAP_FILE)
         try:
             with open(path, 'r') as f:
                 data = json.load(f)
                 self.tile_map = {tuple(map(int, [x.replace('(', '').replace(')', '') for x in k.split(',')])): v for k, v in data['tile_map'].items()}
                 self.nogrid_tiles = data['nogrid_tiles']
+                self.base_tile_size = data['base_tile_size']
                 self.tile_size = data['tile_size']
+                self.change_tiles_size = data['change_tiles_size']
                 self.camera = [data['camera_x'], data['camera_y']]
                 self.k = self.tile_size / self.base_tile_size
                 self._resize_resources()
         except FileNotFoundError:
-            pass    
+            loaded_from_file = False
 
 if __name__ == "__main__":
     screen = pygame.display.set_mode((SCREEN_WIDTH, SCREEN_HEIGHT), pygame.NOFRAME)
     clock = pygame.time.Clock()
 
     editor = Editor()
+    if not loaded_from_file and 'SIZE' in config:
+        var_names = ['tile_size', 'base_tile_size', 'change_tiles_size']
+        for var_name in var_names:
+            if var_name in config['SIZE']:
+                editor.__setattr__(var_name, int(config.get('SIZE', var_name)))
+
 
     ctrl_pressed = False
     shift_pressed = False

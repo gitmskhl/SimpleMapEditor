@@ -1,3 +1,10 @@
 [PATH]
 RESOURCES_DIR=./resources
 MAP_DIR=.
+MAP_FILE=./map.json
+
+
+[SIZE]
+base_tile_size=48
+tile_size=24
+change_tiles_size=16
